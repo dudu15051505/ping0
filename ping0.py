@@ -63,7 +63,7 @@ class Ping0Utility:
 
         return self.sort_fix(results, 2)
 
-    def ping_response_speedtest(self, data_json):
+    def ping_response_speedtest(self, data_json, max_processes=10):
         file_array_total = len(data_json)
         if file_array_total == 0:
             sys.exit("Erro: Nenhum host encontrado com essa palavra")
@@ -72,13 +72,21 @@ class Ping0Utility:
         results = manager.dict()
         self.print_progress_bar(0, file_array_total, prefix='Progresso:', suffix='Completo', length=50)
 
-        processes = [multiprocessing.Process(target=self.parse_ping, args=(results, i, line)) for i, line in enumerate(data_json)]
-        for process in processes:
-            process.start()
-        for i, process in enumerate(processes):
-            process.join()
-            self.print_progress_bar(i + 1, file_array_total, prefix='Progresso:', suffix='Completo', length=50)
+        processes = []
+        for i, line in enumerate(data_json):
+            while len(processes) >= max_processes:
+                for p in processes:
+                    if not p.is_alive():
+                        processes.remove(p)
+            p = multiprocessing.Process(target=self.parse_ping, args=(results, i, line))
+            p.start()
+            processes.append(p)
 
+        for i, p in enumerate(processes):
+            p.join()
+            
+            self.print_progress_bar(i + 1, file_array_total, prefix='Progresso:', suffix='Completo', length=50)
+        
         return self.sort_fix(results.values(), 3)
 
     def parse_ping(self, results, i, line):
@@ -123,13 +131,13 @@ class Ping0Utility:
 
     @staticmethod
     def export_result(printed, prefix):
-        filename = Ping0Utility.get_filename(prefix) + '_resultado_ping0.txt'
+        filename = Ping0Utility.get_filename(prefix) + "_resultado_ping0.txt"
         with open(filename, 'w') as f:
             f.write(printed)
 
     @staticmethod
     def export_result_csv(ping_response, headers, prefix):
-        filename = Ping0Utility.get_filename(prefix) + '_resultado_ping0.csv'
+        filename = Ping0Utility.get_filename(prefix) + "_resultado_ping0.csv"
         np.savetxt(filename, [headers] + ping_response, delimiter="; ", fmt='%s')
 
     @staticmethod
@@ -139,11 +147,11 @@ class Ping0Utility:
 
     @staticmethod
     def current_version():
-        return '1.0.0'
+        return '1.0.1'
 
     @staticmethod
     def get_version():
-        return f'Versão: {Ping0Utility.current_version()}'
+        print(f'Versão: {Ping0Utility.current_version()}')
 
 
 class Ping0App:
@@ -158,7 +166,7 @@ class Ping0App:
         group.add_argument("-f", "--file", help="Arquivo de hosts")
         group.add_argument("-s", "--speedtest", help="Palavra chave para busca dos servidores, utilize aspas para utilizar mais de uma palavra ex: \"Claro Net\"")
         parser.add_argument("-e", "--export", help="Exportar resultados")
-        # parser.add_argument("-4", "--export", help="Somente Ipv4")
+        parser.add_argument("-v", "--version", action='store_true', help="Somente Ipv4")
         # parser.add_argument("-6", "--export", help="Somente Ipv6")
 
         args = parser.parse_args()
@@ -183,7 +191,9 @@ class Ping0App:
                 self.ping_utility.export_result_csv(results, headers, args.speedtest)
             elif args.export == 'txt':
                 self.ping_utility.export_result(table, args.speedtest)
-
+        
+        if args.version:
+            return self.ping_utility.get_version()
 
 if __name__ == '__main__':
     Ping0App().run()
